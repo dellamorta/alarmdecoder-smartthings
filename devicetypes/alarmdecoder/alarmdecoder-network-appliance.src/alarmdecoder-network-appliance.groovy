@@ -442,18 +442,18 @@ def update_state(data) {
 }
 
 def sync (ip, port) {
-	log.trace("--- trace")
-	def existingIp = getDataValue("ip")
-	def existingPort = getDataValue("port")
-	if (ip && ip != existingIp) {
-		updateDataValue("ip", ip)
-	} else {
-    	ip = existingIp
+    log.trace("--- trace")
+    def existingIp = getDataValue("ip")
+    def existingPort = getDataValue("port")
+    if (ip && ip != existingIp) {
+        updateDataValue("ip", ip)
+    } else {
+        ip = existingIp
     }
-	if (port && port != existingPort) {
-		updateDataValue("port", port)
-	} else {
-    	port = existingPort
+    if (port && port != existingPort) {
+        updateDataValue("port", port)
+    } else {
+        port = existingPort
     }
     log.trace("Setting urn to ${ip}:${port}")
     state.urn = "${ip}:${port}"

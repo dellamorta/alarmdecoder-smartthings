@@ -103,10 +103,10 @@ def locationHandler(evt) {
                 d.ip = parsedEvent.ip
                 d.port = parsedEvent.port
 
-				def child = getChildDevice(parsedEvent.mac)
+                def child = getChildDevice(parsedEvent.mac)
                 if (child) {
-                	child.sync(parsedEvent.ip, parsedEvent.port)
-                 }
+                    child.sync(parsedEvent.ip, parsedEvent.port)
+                }
                 log.trace "locationHandler: device changed values!"
             }
         }
