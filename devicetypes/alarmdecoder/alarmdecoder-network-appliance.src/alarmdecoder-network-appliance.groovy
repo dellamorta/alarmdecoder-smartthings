@@ -15,6 +15,7 @@
  */
 import groovy.json.JsonSlurper;
 
+
 preferences {
     section() {
         input("api_key", "password", title: "API Key", description: "The key to access the REST API", required: true)
@@ -41,8 +42,9 @@ metadata {
         capability "Alarm"              // PANIC
         capability "smokeDetector"      // FIRE
 
-        attribute "urn", "string"
-        attribute "panel_state", "enum", ["armed", "armed_stay", "disarmed", "alarming", "fire"]
+/*        attribute "user_code", "string"
+        attribute "panel_type", "enum", ["ADEMCO", "DSC"]
+        attribute "panel_state", "enum", ["armed", "armed_stay", "disarmed", "alarming", "fire"]*/
         attribute "armed", "enum", ["armed", "disarmed", "arming", "disarming"]
         attribute "panic_state", "string"
         attribute "zoneStatus1", "number"
@@ -314,7 +316,7 @@ def unlock() {
 def refresh() {
     log.trace("--- handler.refresh")
 
-    def urn = device.currentValue("urn")
+    def urn = state.urn
     def apikey = _get_api_key()
 
     return hub_http_get(urn, "/api/v1/alarmdecoder?apikey=${apikey}")
@@ -437,6 +439,24 @@ def update_state(data) {
     state.armed = data.panel_armed
 
     return events
+}
+
+def sync (ip, port) {
+	log.trace("--- trace")
+	def existingIp = getDataValue("ip")
+	def existingPort = getDataValue("port")
+	if (ip && ip != existingIp) {
+		updateDataValue("ip", ip)
+	} else {
+    	ip = existingIp
+    }
+	if (port && port != existingPort) {
+		updateDataValue("port", port)
+	} else {
+    	port = existingPort
+    }
+    log.trace("Setting urn to ${ip}:${port}")
+    state.urn = "${ip}:${port}"
 }
 
 /*** Utility ***/
@@ -587,7 +607,7 @@ private def parseEventMessage(String description) {
 def send_keys(keys) {
     log.trace("--- send_keys: keys=${keys}")
 
-    def urn = device.currentValue("urn")
+    def urn = state.urn
     def apikey = _get_api_key()
 
     return hub_http_post(urn, "/api/v1/alarmdecoder/send?apikey=${apikey}", """{ "keys": "${keys}" }""")

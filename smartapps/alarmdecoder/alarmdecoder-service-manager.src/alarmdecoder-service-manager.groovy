@@ -27,10 +27,10 @@ definition(
 preferences {
     page(name: "main", title: "Discover your AlarmDecoder", install: true, uninstall: true) {
         section("") {
-            href(name: "discover", title: "Discover", required: false, page: "discover_devices", description: "Tap to discover")
+            href(name: "discover", title: "Discover", required: false, page: "discoverDevices", description: "Tap to discover")
         }
     }
-    page(name: "discover_devices", title: "Discovery started..", content: "discover_devices", refreshTimeout: 5)
+    page(name: "discoverDevices", title: "Discovery started..", content: "discoverDevices", refreshTimeout: 5)
 }
 
 /*** Handlers ***/
@@ -56,7 +56,7 @@ def uninstalled() {
     //       don't get correctly unbound and the devices can't be deleted because they're in use.
     unschedule()
     unsubscribe()
-    runIn(300, do_uninstall)
+    runIn(300, doUninstall)
 }
 
 def initialize() {
@@ -96,26 +96,18 @@ def locationHandler(evt) {
         }
         else {
             def d = devices."${parsedEvent.ssdpUSN.toString()}"
-            boolean deviceChangedValues = false
 
             log.trace "locationHandler: device already exists.. checking for changed values"
 
             if (d.ip != parsedEvent.ip || d.port != parsedEvent.port) {
                 d.ip = parsedEvent.ip
                 d.port = parsedEvent.port
-                deviceChangedValues = true
 
+				def child = getChildDevice(parsedEvent.mac)
+                if (child) {
+                	child.sync(parsedEvent.ip, parsedEvent.port)
+                 }
                 log.trace "locationHandler: device changed values!"
-            }
-
-            if (deviceChangedValues) {
-                def children = getChildDevices()
-                children.each {
-                    if (it.getDeviceDataByName("mac") == parsedEvent.mac) {
-                        it.setDeviceNetworkId((parsedEvent.ip + ":" + parsedEvent.port))
-                        log.trace "Set new network id: " + parsedEvent.ip + ":" + parsedEvent.port
-                    }
-                }
             }
         }
     }
@@ -130,7 +122,7 @@ def locationHandler(evt) {
 def refreshHandler() {
     log.trace "refreshHandler"
 
-    refresh_alarmdecoders()
+    refreshAlarmdecoders()
 }
 
 /*** Commands ***/
@@ -153,43 +145,43 @@ def zoneOff(evt) {
 
 /*** Utility ***/
 
-def discover_devices() {
+def discoverDevices() {
     int refreshInterval = 5
     int refreshCount = !state.refreshCount ? 0 : state.refreshCount as int
     state.refreshCount = refreshCount += 1
 
     def found_devices = [:]
-    def options = state.devices.each { k, v ->
-        log.trace "discover_devices: ${v}"
+    getDevices().each { k, v ->
+        log.trace "discoverDevices: ${v}"
         def ip = convertHexToIP(v.ip)
-        found_devices["${v.ip}:${v.port}"] = "AlarmDecoder @ ${ip}"
+        found_devices["${v.mac}"] = "AlarmDecoder @ ${ip}"
     }
 
     def numFound = found_devices.size() ?: 0
 
     if (!state.subscribed) {
-        log.trace "discover_devices: subscribe to location"
+        log.trace "discoverDevices: subscribe to location"
 
         subscribe(location, null, locationHandler, [filterEvents: false])
         state.subscribed = true
     }
     
-    discover_alarmdecoder()
+    discoverAlarmdecoder()
 
-    return dynamicPage(name: "discover_devices", title: "Discovery started..", nextPage: "", refreshInterval: refreshInterval, install: true, uninstall: true) {
+    return dynamicPage(name: "discoverDevices", title: "Discovery started..", nextPage: "", refreshInterval: refreshInterval, install: true, uninstall: true) {
         section("Please wait.") {
             input "selectedDevices", "enum", required: false, title: "Select device(s) (${numFound} found)", multiple: true, options: found_devices
             // TEMP: REMOVE THIS
-            href(name: "refreshDevices", title: "Refresh", required: false, page: "discover_devices")
+            href(name: "refreshDevices", title: "Refresh", required: false, page: "discoverDevices")
         }
     }
 }
 
-def discover_alarmdecoder() {
-    log.trace "discover_alarmdecoder"
+def discoverAlarmdecoder() {
+    log.trace "discoverAlarmdecoder"
 
     if (!state.subscribed) {
-        log.trace "discover_alarmdecoder: subscribing!"
+        log.trace "discoverAlarmdecoder: subscribing!"
         subscribe(location, null, locationHandler, [filterEvents: false])
         state.subscribed = true
     }
@@ -197,7 +189,7 @@ def discover_alarmdecoder() {
     sendHubCommand(new physicalgraph.device.HubAction("lan discovery urn:schemas-upnp-org:device:AlarmDecoder:1", physicalgraph.device.Protocol.LAN))
 }
 
-def do_uninstall() {
+def doUninstall() {
     def devices = getChildDevices()
 
     devices.each {
@@ -216,15 +208,16 @@ def scheduleRefresh() {
 
     def cron = "0 0/${minutes} * * * ?"
     schedule(cron, refreshHandler)
+    runEvery5Minutes("discoverAlarmdecoder")
 }
 
-def refresh_alarmdecoders() {
-    log.trace("refresh_alarmdecoders-")
+def refreshAlarmdecoders() {
+    log.trace("refreshAlarmdecoders-")
     getAllChildDevices().each { device ->
         // Only refresh the main device.
         if (!device.deviceNetworkId.contains(":switch"))
         {
-            log.trace("refresh_alarmdecoders: ${device}")
+            log.trace("refreshAlarmdecoders: ${device}")
             device.refresh()
         }
     }
@@ -251,21 +244,19 @@ def addExistingDevices() {
         log.trace("addExistingDevices, getChildDevice(${dni})")
         if (!d) {
             log.trace("devices=${devices}")
-            def newDevice = devices.find { /*k, v -> k == dni*/ k, v -> dni == "${v.ip}:${v.port}" }
+            def newDevice = getDevices().find { k, v -> dni == "${v.mac}" }
             log.trace("addExistingDevices, devices.find=${newDevice}")
             if (newDevice) {
                 // Set the device network ID so that hubactions get sent to the device parser.
                 def ip = newDevice.value.ip
                 def port = newDevice.value.port
+                def mac = newDevice.value.mac
 
                 // Create device and subscribe to it's zone-on/off events.
-                d = addChildDevice("alarmdecoder", "AlarmDecoder Network Appliance", "${ip}:${port}", newDevice?.value.hub, [name: "${ip}:${port}", label: "AlarmDecoder", completedSetup: true])
+                d = addChildDevice("alarmdecoder", "AlarmDecoder Network Appliance", "${mac}", newDevice?.value.hub, [name: "${ip}:${port}", label: "AlarmDecoder", completedSetup: true])
 
-                // Set URN and APIKey on the child device
-                def urn = newDevice.value.ssdpPath
-                urn -= "http://"
-
-                d.sendEvent(name: 'urn', value: urn, displayed: false)
+                // Set ip and port and APIKey on the child device
+				d.sync(ip, port)
 
                 subscribe(d, "zone-on", zoneOn, [filterEvents: false])
                 subscribe(d, "zone-off", zoneOff, [filterEvents: false])
